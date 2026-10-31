@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diodo Shell</title>
+    <style>
+        body { margin: 0; padding: 20px; background-color: #0d0d0d; color: #ccc; font-family: 'Consolas', 'Courier New', monospace; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; font-size: 15px; }
+        .header { border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px; color: #888; display: flex; justify-content: space-between; }
+        .header span { color: #fff; font-weight: bold; }
+        .output { flex: 1; overflow-y: auto; }
+        .line { margin-bottom: 5px; line-height: 1.4; }
+        .cmd { color: #fff; }
+        .info { color: #75beff; }
+        .success { color: #89d185; }
+        .error { color: #f48771; }
+        .input-line { display: flex; margin-top: 10px; }
+        .prompt { color: #0e639c; margin-right: 10px; font-weight: bold; }
+        input { background: transparent; border: none; color: #fff; font-family: 'Consolas', monospace; font-size: 15px; flex: 1; outline: none; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <span>Diodo Shell v1.0 (Full Screen)</span>
+        <span style="cursor:pointer; color:#ccc;" onclick="document.getElementById('output').innerHTML=''">[ Очистить ]</span>
+    </div>
+
+    <div class="output" id="output">
+        <div class="line info">Diodo Compiler v1.0.0 (x86_64-svarka-linux-gnu)</div>
+        <div class="line info">Введите 'help' для списка команд.</div>
+    </div>
+
+    <div class="input-line">
+        <span class="prompt">root@svarka-studio:~#</span>
+        <input type="text" id="cmd-input" autocomplete="off" autofocus>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+        const input = document.getElementById('cmd-input');
+
+        function print(text, className = "") {
+            const div = document.createElement('div');
+            div.className = 'line ' + className;
+            div.innerHTML = text;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const command = input.value.trim();
+                input.value = ''; 
+                if (!command) return;
+
+                print(`root@svarka-studio:~# ${command}`, 'cmd');
+
+                if (command === 'help') {
+                    print('Доступные команды:', 'info');
+                    print('  help          - Список команд');
+                    print('  clear         - Очистить экран');
+                    print('  diodo build   - Скомпилировать проект');
+                } 
+                else if (command === 'clear') {
+                    output.innerHTML = '';
+                } 
+                else if (command === 'diodo build') {
+                    print('Запуск компиляции...', 'info');
+                    setTimeout(() => print('Сканирование файлов...'), 500);
+                    setTimeout(() => print('Парсинг кода SvarkaSC...'), 1000);
+                    setTimeout(() => print('[УСПЕХ] Файл app.esx готов!', 'success'), 1500);
+                } 
+                else {
+                    print(`Команда не найдена: ${command}`, 'error');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

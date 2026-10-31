@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SvarkaSC Studio | Web IDE</title>
+    
+    <!-- Подключаем CodeMirror для редактора кода -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    
+    <!-- Иконки -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg-main: #1e1e1e;
+            --bg-panel: #252526;
+            --bg-top: #333333;
+            --accent: #0e639c;
+            --text-main: #cccccc;
+            --text-muted: #888;
+            --border: #111;
+            --term-bg: #0d0d0d;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* ===== ВЕРХНЯЯ ПАНЕЛЬ ===== */
+        .topbar { background-color: var(--bg-top); height: 45px; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid var(--border); z-index: 10; }
+        .logo { font-weight: bold; color: #fff; font-size: 15px; display: flex; align-items: center; gap: 10px; }
+        .logo i { color: var(--accent); }
+        
+        .actions { display: flex; gap: 10px; align-items: center; }
+        .btn { background: #444; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; transition: 0.2s; }
+        .btn:hover { background: #555; }
+        .btn-run { background: #238636; font-weight: bold; }
+        .btn-run:hover { background: #2ea043; }
+        .btn-connect { background: #8a2be2; }
+        .btn-connect:hover { background: #9b4dff; }
+
+        /* ===== РАБОЧАЯ ОБЛАСТЬ ===== */
+        .workspace { display: flex; flex: 1; overflow: hidden; }
+
+        /* Левая панель (Проводник и Плагины) */
+        .sidebar { width: 220px; background-color: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .sidebar-section { padding: 10px 15px; font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: bold; border-bottom: 1px solid #333; }
+        .file-item { padding: 8px 15px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 10px; color: #ccc; }
+        .file-item:hover { background: #2a2d2e; }
+        .file-item.active { background: #37373d; color: #fff; }
+        
+        /* Вкладки плагинов */
+        .plugin-tabs { display: flex; background: #1e1e1e; font-size: 10px; padding: 5px; gap: 5px; }
+        .ptab { padding: 4px 8px; border-radius: 3px; cursor: pointer; color: #888; background: #2a2d2e; }
+        .ptab.active { background: var(--accent); color: #fff; }
+
+        /* Центральная часть (Код и Превью) */
+        .main-content { flex: 1; display: flex; flex-direction: column; }
+        .split-view { display: flex; flex: 1; overflow: hidden; }
+        
+        /* Редактор */
+        .editor-container { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); min-width: 300px; }
+        .editor-header { background: var(--bg-panel); height: 35px; display: flex; align-items: center; }
+        .tab { padding: 0 15px; display: flex; align-items: center; gap: 8px; font-size: 13px; border-top: 1px solid var(--accent); background: var(--bg-main); color: #fff; height: 100%; }
+        .CodeMirror { flex: 1; height: 100% !important; font-size: 14px; font-family: 'Consolas', monospace; }
+
+        /* Превью */
+        .preview-container { flex: 1; display: flex; flex-direction: column; background: #fff; min-width: 300px; }
+        .preview-header { background: var(--bg-panel); padding: 5px 15px; font-size: 12px; color: #ccc; display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); height: 35px; align-items: center; }
+        iframe { flex: 1; border: none; width: 100%; height: 100%; background: #fff; }
+
+        /* Терминал */
+        .terminal { height: 220px; background: var(--term-bg); border-top: 1px solid var(--border); display: flex; flex-direction: column; }
+        .term-header { background: var(--bg-panel); padding: 5px 15px; font-size: 12px; color: #ccc; display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); align-items: center; }
+        .term-output { flex: 1; padding: 10px; font-family: 'Consolas', monospace; font-size: 13px; color: #89d185; overflow-y: auto; }
+        .term-input-line { display: flex; padding: 10px; background: var(--term-bg); border-top: 1px solid #222; }
+        .term-prompt { color: var(--accent); margin-right: 10px; font-family: monospace; font-weight: bold; }
+        .term-input-line input { flex: 1; background: transparent; border: none; color: #fff; outline: none; font-family: 'Consolas', monospace; font-size: 13px; }
+
+        /* Статус бар */
+        .statusbar { height: 22px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 11px; }
+
+        /* ===== МОБИЛЬНАЯ ВЕРСИЯ (Acode Style) ===== */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .split-view { flex-direction: column; }
+            .editor-container { min-height: 40vh; border-right: none; border-bottom: 1px solid var(--border); }
+            .preview-container { min-height: 30vh; }
+            .terminal { height: 30vh; }
+            
+            /* Нижняя навигация */
+            .mobile-nav { display: flex; background: var(--bg-panel); height: 60px; border-top: 1px solid var(--border); }
+            .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; font-size: 10px; cursor: pointer; gap: 4px; }
+            .nav-item i { font-size: 18px; }
+            .nav-item.active { color: var(--accent); }
+
+            /* Скрытие панелей для мобильного режима */
+            .mob-hide { display: none !important; }
+            .mob-show { display: flex !important; flex: 1; height: 100%; }
+        }
+
+        @media (min-width: 769px) {
+            .mobile-nav { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ВЕРХНЯЯ ПАНЕЛЬ -->
+    <div class="topbar">
+        <div class="logo"><i class="fa-solid fa-code"></i> SvarkaSC Studio</div>
+        <div class="actions">
+            <a href="view.html" target="_blank" class="btn btn-connect"><i class="fa-solid fa-link"></i> Подключить</a>
+            <a href="terminal.html" target="_blank" class="btn"><i class="fa-solid fa-terminal"></i> Терминал</a>
+            <button class="btn btn-run" onclick="runBuild()"><i class="fa-solid fa-play"></i> Запуск</button>
+        </div>
+    </div>
+
+    <!-- РАБОЧАЯ ОБЛАСТЬ -->
+    <div class="workspace">
+        
+        <!-- Левая панель -->
+        <div class="sidebar">
+            <div class="sidebar-section">🧩 Плагины</div>
+            <div class="plugin-tabs">
+                <div class="ptab">Установл.</div>
+                <div class="ptab">Доступн.</div>
+                <div class="ptab active">Загружен.</div>
+            </div>
+            <div class="file-item"><i class="fa-solid fa-puzzle-piece" style="color:#8a2be2;"></i> theme.plsvk</div>
+            
+            <div class="sidebar-section" style="margin-top:20px;">📁 Проводник</div>
+            <div class="file-item active"><i class="fa-brands fa-html5" style="color:#e34c26;"></i> main.html</div>
+            <div class="file-item"><i class="fa-solid fa-file-code" style="color:#75beff;"></i> view.html</div>
+            <div class="file-item"><i class="fa-solid fa-terminal" style="color:#89d185;"></i> terminal.html</div>
+        </div>
+
+        <!-- Центральная часть -->
+        <div class="main-content">
+            <div class="split-view">
+                
+                <!-- Редактор -->
+                <div class="editor-container" id="pane-editor">
+                    <div class="editor-header">
+                        <div class="tab"><i class="fa-brands fa-html5" style="color:#e34c26;"></i> main.html</div>
+                    </div>
+                    <textarea id="code-editor"></textarea>
+                </div>
+
+                <!-- Превью -->
+                <div class="preview-container mob-hide" id="pane-preview">
+                    <div class="preview-header">
+                        <span><i class="fa-solid fa-eye"></i> Живой предпросмотр</span>
+                        <span id="preview-status" style="color:#89d185;"><i class="fa-solid fa-check"></i> Готово</span>
+                    </div>
+                    <iframe id="preview-frame"></iframe>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ТЕРМИНАЛ -->
+    <div class="terminal mob-hide" id="pane-terminal">
+        <div class="term-header">
+            <span><i class="fa-solid fa-terminal"></i> Diodo Shell</span>
+            <span style="cursor:pointer;" onclick="clearTerm()"><i class="fa-solid fa-trash"></i> Очистить</span>
+        </div>
+        <div class="term-output" id="term-output">
+            <div>Diodo Compiler v1.0.0 (Web Edition)</div>
+            <div>Введите 'help' для списка команд.</div>
+        </div>
+        <div class="term-input-line">
+            <span class="term-prompt">&gt;</span>
+            <input type="text" id="term-cmd" autocomplete="off" placeholder="Введите команду...">
+        </div>
+    </div>
+
+    <!-- СТАТУС БАР -->
+    <div class="statusbar">
+        <div><i class="fa-solid fa-code-branch"></i> main | SvarkaSC</div>
+        <div>UTF-8 | Live Preview: ON</div>
+    </div>
+
+    <!-- МОБИЛЬНАЯ НАВИГАЦИЯ -->
+    <div class="mobile-nav">
+        <div class="nav-item active" onclick="switchMobile('editor', this)"><i class="fa-solid fa-code"></i> Код</div>
+        <div class="nav-item" onclick="switchMobile('preview', this)"><i class="fa-solid fa-eye"></i> Превью</div>
+        <div class="nav-item" onclick="switchMobile('terminal', this)"><i class="fa-solid fa-terminal"></i> Терминал</div>
+    </div>
+
+    <script>
+        // 1. Инициализация редактора кода
+        var editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
+            lineNumbers: true, 
+            mode: "htmlmixed", 
+            theme: "dracula", 
+            lineWrapping: true,
+            indentUnit: 4
+        });
+
+        // Стартовый код (Привет, мир)
+        editor.setValue(`<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; text-align: center; padding: 50px; background: #f0f4f8; }
+        h1 { color: #0e639c; }
+        button { padding: 10px 20px; font-size: 16px; background: #0e639c; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #1177bb; }
+    </style>
+</head>
+<body>
+    <h1>SvarkaSC Studio</h1>
+    <p>Редактируй этот код, и он мгновенно обновится справа!</p>
+    <button onclick="alert('Привет из SvarkaSC!')">Нажми на меня</button>
+</body>
+</html>`);
+
+        // 2. Логика живого предпросмотра
+        const previewFrame = document.getElementById("preview-frame");
+        const previewStatus = document.getElementById("preview-status");
+        let typingTimer;
+
+        function updatePreview() {
+            const code = editor.getValue();
+            const frameDoc = previewFrame.contentDocument || previewFrame.contentWindow.document;
+            frameDoc.open();
+            frameDoc.write(code);
+            frameDoc.close();
+            
+            // Визуальный эффект обновления
+            previewStatus.style.color = "#75beff";
+            previewStatus.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Обновление...';
+            setTimeout(() => {
+                previewStatus.style.color = "#89d185";
+                previewStatus.innerHTML = '<i class="fa-solid fa-check"></i> Готово';
+            }, 300);
+        }
+
+        // Автообновление при вводе (задержка 500мс)
+        editor.on("change", function() {
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(updatePreview, 500);
+        });
+
+        // Первый запуск
+        setTimeout(updatePreview, 100);
+
+        // 3. Логика терминала
+        const termOutput = document.getElementById("term-output");
+        const termInput = document.getElementById("term-cmd");
+
+        function printTerm(text, color = "#89d185") {
+            const div = document.createElement("div");
+            div.style.color = color;
+            div.innerText = text;
+            termOutput.appendChild(div);
+            termOutput.scrollTop = termOutput.scrollHeight;
+        }
+
+        function clearTerm() {
+            termOutput.innerHTML = "";
+        }
+
+        function runBuild() {
+            printTerm("> diodo build main.html", "#0e639c");
+            setTimeout(() => printTerm("Сканирование файлов проекта..."), 400);
+            setTimeout(() => printTerm("Конвертация кода в системный английский..."), 800);
+            setTimeout(() => printTerm("Упаковка ресурсов и manifest.json..."), 1200);
+            setTimeout(() => printTerm("✅ [УСПЕХ] Файл app.esx собран и готов к установке!"), 1600);
+            updatePreview();
+        }
+
+        // Обработка ввода в терминале
+        termInput.addEventListener("keydown", function(e) {
+            if (e.key === "Enter") {
+                const cmd = termInput.value.trim();
+                termInput.value = "";
+                if (!cmd) return;
+                
+                printTerm("> " + cmd, "#fff");
+
+                if (cmd === "clear") {
+                    clearTerm();
+                } else if (cmd === "build") {
+                    runBuild();
+                } else if (cmd === "help") {
+                    printTerm("Доступные команды: help, clear, build", "#75beff");
+                } else {
+                    printTerm(`Команда '${cmd}' не найдена. Введите 'help'.`, "#f48771");
+                }
+            }
+        });
+
+        // 4. Переключение мобильных вкладок
+        function switchMobile(pane, element) {
+            // Меняем активную иконку
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            element.classList.add('active');
+
+            // Прячем все панели
+            document.getElementById('pane-editor').classList.add('mob-hide');
+            document.getElementById('pane-preview').classList.add('mob-hide');
+            document.getElementById('pane-terminal').classList.add('mob-hide');
+
+            // Показываем нужную
+            if (pane === 'editor') {
+                document.getElementById('pane-editor').classList.remove('mob-hide');
+                document.getElementById('pane-editor').classList.add('mob-show');
+            } else if (pane === 'preview') {
+                document.getElementById('pane-preview').classList.remove('mob-hide');
+                document.getElementById('pane-preview').classList.add('mob-show');
+            } else if (pane === 'terminal') {
+                document.getElementById('pane-terminal').classList.remove('mob-hide');
+                document.getElementById('pane-terminal').classList.add('mob-show');
+            }
+        }
+    </script>
+</body>
+</html>
