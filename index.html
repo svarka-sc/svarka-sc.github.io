@@ -13,9 +13,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
     
-    <!-- Иконки -->
+    <!-- Иконки, JSZip для плагинов и Supabase -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Supabase -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
@@ -24,32 +24,35 @@
             --accent: #0e639c; --text-main: #cccccc; --text-muted: #888;
             --border: #111; --term-bg: #0d0d0d; --green: #238636; --purple: #8a2be2;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         
-        /* ИСПРАВЛЕНИЕ 1: Используем 100dvh вместо 100vh, чтобы браузер не съедал высоту */
+        /* Фикс бага с удалением на телефоне */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        .CodeMirror, textarea, input { 
+            user-select: text !important; 
+            -webkit-user-select: text !important; 
+        }
+        
         body { 
             font-family: 'Segoe UI', sans-serif; 
             background-color: var(--bg-main); 
             color: var(--text-main); 
-            height: 100vh; /* Для старых браузеров */
-            height: 100dvh; /* Для современных мобильных браузеров */
-            display: flex; 
-            flex-direction: column; 
-            overflow: hidden; 
+            height: 100dvh; 
+            display: flex; flex-direction: column; overflow: hidden; 
         }
 
         /* ВЕРХНЯЯ ПАНЕЛЬ */
         .topbar { background-color: var(--bg-top); height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; z-index: 100; }
         .logo { font-weight: bold; color: #fff; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-        .actions { display: flex; gap: 8px; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .btn { background: #444; color: #fff; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; transition: 0.2s;}
         .btn:hover { background: #555; }
         .btn-run { background: var(--green); font-weight: bold; }
         .btn-sync { background: var(--purple); }
         .btn-term { background: #0e639c; }
+        .btn-plugin { background: #D97757; color: #fff; }
 
         /* РАБОЧАЯ ОБЛАСТЬ */
-        .workspace { display: flex; flex: 1; overflow: hidden; position: relative; min-height: 0; /* Важно для flex-контейнеров */ }
+        .workspace { display: flex; flex: 1; overflow: hidden; position: relative; min-height: 0; }
         
         /* ЛЕВАЯ ПАНЕЛЬ */
         .sidebar { width: 220px; background-color: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; }
@@ -61,7 +64,7 @@
         .file-item .download-btn { color: #888; cursor: pointer; }
         .file-item .download-btn:hover { color: var(--green); }
 
-        /* ЦЕНТР */
+        /* ЦЕНТР (РЕДАКТОР) */
         .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0;}
         .editor-container { flex: 1; display: flex; flex-direction: column; min-height: 0;}
         .CodeMirror { flex: 1; height: 100% !important; font-size: 14px; font-family: 'Consolas', monospace; }
@@ -75,38 +78,23 @@
         .statusbar { height: 22px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 11px; flex-shrink: 0; z-index: 100;}
         .statusbar.connected { background: var(--green); }
 
-        /* ИСПРАВЛЕНИЕ 2: Нижняя навигация */
-        .mobile-nav { 
-            display: none; 
-            background: var(--bg-top); 
-            min-height: 60px; /* Заменили height на min-height */
-            height: auto;
-            border-top: 1px solid var(--border); 
-            flex-shrink: 0; 
-            z-index: 150;
-            /* Добавляем отступ для системных кнопок Android (навигация жестами) */
-            padding-bottom: env(safe-area-inset-bottom); 
-        }
+        /* МОБИЛЬНАЯ НАВИГАЦИЯ */
+        .mobile-nav { display: none; background: var(--bg-top); min-height: 60px; border-top: 1px solid var(--border); flex-shrink: 0; z-index: 150; padding-bottom: env(safe-area-inset-bottom); }
         .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; font-size: 10px; cursor: pointer; gap: 4px; padding: 8px 0;}
         .nav-item i { font-size: 20px; }
         .nav-item.active { color: var(--accent); }
 
-        /* КРАСИВОЕ ОКНО ТЕРМИНАЛА */
-        .term-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px);
-            display: none; justify-content: center; align-items: center; z-index: 1000;
-        }
-        .term-window {
-            width: 90%; max-width: 800px; height: 60vh;
-            background: var(--term-bg); border: 1px solid #444; border-radius: 12px;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.8); display: flex; flex-direction: column; overflow: hidden;
-            animation: scaleIn 0.2s ease-out;
-        }
+        /* ТЕРМИНАЛ */
+        .term-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .term-window { width: 90%; max-width: 800px; height: 70vh; background: var(--term-bg); border: 1px solid #444; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); display: flex; flex-direction: column; overflow: hidden; animation: scaleIn 0.2s ease-out; }
         @keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .term-window-header { background: #2d2d2d; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #111; }
         .term-window-header .title { color: #ccc; font-size: 13px; display: flex; align-items: center; gap: 8px; }
         .term-window-header .close-btn { color: #ff5f56; cursor: pointer; font-size: 16px; }
+        
+        .mode-switch { background: #444; color: #fff; border: 1px solid #555; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-left: 10px; }
+        .mode-switch:hover { background: #555; }
+
         .term-window-body { flex: 1; padding: 15px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 14px; color: #89d185; }
         .term-window-input { display: flex; padding: 15px; background: #111; border-top: 1px solid #333; }
         .term-window-input span { color: var(--accent); margin-right: 10px; font-family: monospace; font-weight: bold; }
@@ -118,7 +106,6 @@
         .modal-content input { width: 100%; padding: 10px; margin-bottom: 15px; background: #111; border: 1px solid #555; color: #fff; border-radius: 5px; font-family: monospace; font-size: 16px; text-transform: uppercase; }
         .modal-content button { width: 100%; padding: 10px; background: var(--accent); color: #fff; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px; }
 
-        /* АДАПТАЦИЯ ДЛЯ ТЕЛЕФОНА */
         @media (max-width: 768px) {
             .workspace { flex-direction: column; }
             .sidebar, .main-content, .preview-area { display: none; width: 100%; height: 100%; border: none; flex: 1; min-height: 0;} 
@@ -126,7 +113,7 @@
             .mobile-nav { display: flex; }
             .btn-text { display: none; }
             .btn { padding: 8px 10px; }
-            .term-window { height: 80vh; width: 95%; border-radius: 8px; }
+            .term-window { height: 85vh; width: 95%; border-radius: 8px; }
         }
     </style>
 </head>
@@ -136,11 +123,14 @@
         <div class="logo"><i class="fa-solid fa-code"></i> SvarkaSC Pro</div>
         <div class="actions">
             <button class="btn btn-sync" onclick="document.getElementById('syncModal').style.display='flex'"><i class="fa-solid fa-link"></i> <span class="btn-text">Синхронизация</span></button>
+            <button class="btn btn-plugin" onclick="document.getElementById('plugin-upload').click()"><i class="fa-solid fa-puzzle-piece"></i> <span class="btn-text">Плагины</span></button>
             <button class="btn" onclick="create3DProject()"><i class="fa-solid fa-cube"></i> <span class="btn-text">3D Проект</span></button>
             <button class="btn btn-term" onclick="openTerminal()"><i class="fa-solid fa-terminal"></i> <span class="btn-text">Терминал</span></button>
             <button class="btn btn-run" onclick="runCode()"><i class="fa-solid fa-play"></i> <span class="btn-text">Запуск</span></button>
         </div>
     </div>
+
+    <input type="file" id="plugin-upload" accept=".plsvk" style="display:none;">
 
     <div class="workspace">
         <div class="sidebar mobile-active" id="pane-files">
@@ -176,10 +166,14 @@
         <div class="nav-item" onclick="openTerminal()"><i class="fa-solid fa-terminal"></i> Терминал</div>
     </div>
 
+    <!-- ВСТРОЕННЫЙ ТЕРМИНАЛ (С режимом Termux) -->
     <div class="term-overlay" id="termOverlay" onclick="closeTerminal(event)">
         <div class="term-window" onclick="event.stopPropagation()">
             <div class="term-window-header">
-                <div class="title"><i class="fa-solid fa-terminal"></i> Diodo Shell (Terminal)</div>
+                <div class="title">
+                    <i class="fa-solid fa-terminal"></i> <span id="term-title">Diodo Shell</span>
+                    <button class="mode-switch" id="mode-btn" onclick="toggleTermuxMode()">Режим: Diodo</button>
+                </div>
                 <i class="fa-solid fa-xmark close-btn" onclick="closeTerminal()"></i>
             </div>
             <div class="term-window-body" id="term-output">
@@ -187,7 +181,7 @@
                 <div>Введите 'help' для списка команд.</div>
             </div>
             <div class="term-window-input">
-                <span>&gt;</span>
+                <span id="term-prompt">&gt;</span>
                 <input type="text" id="term-cmd" autocomplete="off">
             </div>
         </div>
@@ -207,7 +201,7 @@
         // 1. ФАЙЛОВАЯ СИСТЕМА
         // ==========================================
         let files = JSON.parse(localStorage.getItem('svarka_pro_files')) || {
-            'main.html': `<!DOCTYPE html>\n<html>\n<head>\n    <link rel="stylesheet" href="style.css">\n</head>\n<body>\n    <h1>SvarkaSC Pro</h1>\n    <p>Нажми "3D Проект" сверху, чтобы создать 3D-игру!</p>\n</body>\n</html>`,
+            'main.html': `<!DOCTYPE html>\n<html>\n<head>\n    <link rel="stylesheet" href="style.css">\n</head>\n<body>\n    <h1>SvarkaSC Pro</h1>\n    <p>Нажми "Плагины" сверху и загрузи Клода!</p>\n</body>\n</html>`,
             'style.css': `body { font-family: sans-serif; text-align: center; padding: 50px; background: #1e1e2f; color: #fff; }\nh1 { color: #00ffcc; }`,
             'script.js': `console.log("Ready");`
         };
@@ -275,7 +269,8 @@
         // 2. РЕДАКТОР И СБОРКА
         // ==========================================
         var editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
-            lineNumbers: true, theme: "dracula", lineWrapping: true, mode: "htmlmixed"
+            lineNumbers: true, theme: "dracula", lineWrapping: true, mode: "htmlmixed",
+            inputStyle: "contenteditable"
         });
         editor.setValue(files[currentFile]);
         renderFiles();
@@ -292,30 +287,65 @@
             frameDoc.open(); frameDoc.write(html); frameDoc.close();
 
             printTerm("> Сборка проекта...", "#0e639c");
-            setTimeout(() => printTerm("✅ Успешно собрано в превью."), 500);
+            setTimeout(() => {
+                printTerm("✅ Успешно собрано в превью.", "#89d185");
+                if (window.ccmSuccess) window.ccmSuccess(); // Клод радуется
+            }, 500);
             
             if(window.innerWidth <= 768) switchMobile('preview', document.querySelectorAll('.nav-item')[2]);
             if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'code-update', payload: { files: files } });
         }
 
         // ==========================================
-        // 3. 3D ПРОЕКТ
+        // 3. ПЛАГИНЫ (.plsvk)
         // ==========================================
-        function create3DProject() {
-            files['main.html'] = `<!DOCTYPE html>\n<html>\n<head>\n    <style>body { margin: 0; overflow: hidden; background-color: #000; }</style>\n</head>\n<body>\n    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>\n    <script src="game.js"><\/script>\n</body>\n</html>`;
-            files['game.js'] = `const scene = new THREE.Scene();\nconst camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);\nconst renderer = new THREE.WebGLRenderer();\nrenderer.setSize(window.innerWidth, window.innerHeight);\ndocument.body.appendChild(renderer.domElement);\n\nconst geometry = new THREE.BoxGeometry();\nconst material = new THREE.MeshNormalMaterial();\nconst cube = new THREE.Mesh(geometry, material);\nscene.add(cube);\ncamera.position.z = 3;\n\nfunction animate() {\n    requestAnimationFrame(animate);\n    cube.rotation.x += 0.01;\n    cube.rotation.y += 0.01;\n    renderer.render(scene, camera);\n}\nanimate();`;
+        document.getElementById('plugin-upload').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
 
-            saveFiles();
-            loadFile('main.html');
-            alert("3D Проект создан! Нажми 'Запуск', чтобы увидеть куб.");
-        }
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                JSZip.loadAsync(e.target.result).then(function(zip) {
+                    const manifestFile = zip.file("manifest.json");
+                    if (!manifestFile) return alert("Ошибка: Нет manifest.json");
+
+                    manifestFile.async("string").then(function(manifestStr) {
+                        const manifest = JSON.parse(manifestStr);
+                        printTerm(`Установка плагина: ${manifest.name}...`, "#D97757");
+
+                        if (zip.file("styles.css")) {
+                            zip.file("styles.css").async("string").then(function(css) {
+                                const styleTag = document.createElement("style");
+                                styleTag.innerHTML = css;
+                                document.head.appendChild(styleTag);
+                            });
+                        }
+
+                        if (zip.file("main.js")) {
+                            zip.file("main.js").async("string").then(function(js) {
+                                const scriptTag = document.createElement("script");
+                                scriptTag.innerHTML = js;
+                                document.body.appendChild(scriptTag);
+                                printTerm(`Плагин ${manifest.name} успешно загружен!`, "#89d185");
+                            });
+                        }
+                    });
+                }).catch(err => alert("Ошибка чтения архива: " + err));
+            };
+            reader.readAsArrayBuffer(file);
+        });
 
         // ==========================================
-        // 4. КРАСИВОЕ ОКНО ТЕРМИНАЛА
+        // 4. ТЕРМИНАЛ И РЕЖИМ TERMUX (Внутри IDE)
         // ==========================================
         const termOverlay = document.getElementById('termOverlay');
         const termOutput = document.getElementById("term-output");
         const termInput = document.getElementById("term-cmd");
+        const termTitle = document.getElementById("term-title");
+        const termPrompt = document.getElementById("term-prompt");
+        const modeBtn = document.getElementById("mode-btn");
+        
+        let isTermuxMode = false;
 
         function openTerminal() {
             termOverlay.style.display = 'flex';
@@ -325,6 +355,25 @@
         function closeTerminal(event) {
             if (!event || event.target === termOverlay || event.target.classList.contains('close-btn')) {
                 termOverlay.style.display = 'none';
+            }
+        }
+
+        function toggleTermuxMode() {
+            isTermuxMode = !isTermuxMode;
+            if (isTermuxMode) {
+                modeBtn.innerText = "Режим: Termux";
+                modeBtn.style.background = "#238636";
+                termTitle.innerText = "Termux (Linux)";
+                termPrompt.innerText = "~ $";
+                printTerm("\nПереключение в Termux...", "#f0db4f");
+                printTerm("Введите 'help' для Linux-команд.", "#75beff");
+            } else {
+                modeBtn.innerText = "Режим: Diodo";
+                modeBtn.style.background = "#444";
+                termTitle.innerText = "Diodo Shell";
+                termPrompt.innerText = ">";
+                printTerm("\nПереключение в Diodo...", "#f0db4f");
+                printTerm("Введите 'help' для команд Diodo.", "#75beff");
             }
         }
 
@@ -342,18 +391,46 @@
             if (e.key === "Enter") {
                 const cmd = termInput.value.trim(); termInput.value = "";
                 if (!cmd) return;
-                printTerm("> " + cmd, "#fff");
                 
-                if (cmd === "clear") termOutput.innerHTML = "";
-                else if (cmd === "build" || cmd === "run") runCode();
-                else if (cmd === "ls") {
-                    printTerm("Файлы проекта:", "#75beff");
-                    for(let f in files) printTerm("  - " + f);
+                const promptStr = isTermuxMode ? "~ $" : ">";
+                printTerm(promptStr + " " + cmd, "#fff");
+                
+                if (isTermuxMode) {
+                    // ЛОГИКА TERMUX
+                    if (cmd === "clear") termOutput.innerHTML = "";
+                    else if (cmd === "ls") { printTerm("Downloads  Documents  Pictures  belos_termux", "#ccc"); }
+                    else if (cmd === "whoami") { printTerm("u0_a123", "#ccc"); }
+                    else if (cmd === "pkg install nodejs" || cmd === "apt install nodejs") {
+                        printTerm("Reading package lists... Done", "#ccc");
+                        printTerm("Building dependency tree... Done", "#ccc");
+                        setTimeout(() => printTerm("Unpacking nodejs (18.16.0)...", "#ccc"), 500);
+                        setTimeout(() => printTerm("Setting up nodejs... Done", "#89d185"), 1000);
+                    }
+                    else if (cmd === "apt update") {
+                        printTerm("Get:1 https://mirror.termux.dev stable InRelease", "#ccc");
+                        setTimeout(() => printTerm("Reading package lists... Done", "#89d185"), 800);
+                    }
+                    else if (cmd === "help") {
+                        printTerm("Linux-команды: help, clear, ls, whoami, pkg install, apt update", "#75beff");
+                    }
+                    else printTerm(`bash: ${cmd}: command not found`, "#f48771");
+                } else {
+                    // ЛОГИКА DIODO
+                    if (cmd === "clear") termOutput.innerHTML = "";
+                    else if (cmd === "build" || cmd === "run") runCode();
+                    else if (cmd === "error") {
+                        printTerm("Симуляция ошибки компиляции...", "#f48771");
+                        if (window.ccmError) window.ccmError();
+                    }
+                    else if (cmd === "ls") {
+                        printTerm("Файлы проекта:", "#75beff");
+                        for(let f in files) printTerm("  - " + f);
+                    }
+                    else if (cmd === "help") {
+                        printTerm("Команды Diodo: help, clear, build, ls, error", "#75beff");
+                    }
+                    else printTerm(`Команда '${cmd}' не найдена.`, "#f48771");
                 }
-                else if (cmd === "help") {
-                    printTerm("Команды: help, clear, build, ls", "#75beff");
-                }
-                else printTerm(`Команда '${cmd}' не найдена.`, "#f48771");
             }
         });
 
