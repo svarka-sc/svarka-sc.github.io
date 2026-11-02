@@ -25,12 +25,7 @@
             --border: #111; --term-bg: #0d0d0d; --green: #238636; --purple: #8a2be2;
         }
         
-        /* Фикс бага с удалением на телефоне */
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        .CodeMirror, textarea, input { 
-            user-select: text !important; 
-            -webkit-user-select: text !important; 
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         
         body { 
             font-family: 'Segoe UI', sans-serif; 
@@ -84,6 +79,21 @@
         .nav-item i { font-size: 20px; }
         .nav-item.active { color: var(--accent); }
 
+        /* МОДАЛЬНЫЕ ОКНА */
+        .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1001; }
+        .modal-content { background: var(--bg-panel); padding: 25px; border-radius: 10px; width: 90%; max-width: 500px; border: 1px solid #444; max-height: 85vh; overflow-y: auto;}
+        .modal-content input { width: 100%; padding: 10px; margin-bottom: 15px; background: #111; border: 1px solid #555; color: #fff; border-radius: 5px; font-family: monospace; font-size: 16px; text-transform: uppercase; }
+        .modal-content button { width: 100%; padding: 10px; background: var(--accent); color: #fff; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px; }
+
+        /* СПИСКИ ПЛАГИНОВ */
+        .section-title { font-size: 12px; color: #888; text-transform: uppercase; font-weight: bold; margin: 15px 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px;}
+        .plugin-card { background: #1e1e1e; border: 1px solid #444; border-radius: 8px; padding: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .plugin-info h4 { color: #fff; margin: 0 0 5px 0; font-size: 15px; }
+        .plugin-info p { color: #888; font-size: 12px; margin: 0; }
+        .plugin-action-btn { background: var(--green); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; }
+        .plugin-action-btn:hover { background: #2ea043; }
+        .installed-badge { color: #89d185; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 5px; }
+
         /* ТЕРМИНАЛ */
         .term-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .term-window { width: 90%; max-width: 800px; height: 70vh; background: var(--term-bg); border: 1px solid #444; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); display: flex; flex-direction: column; overflow: hidden; animation: scaleIn 0.2s ease-out; }
@@ -99,12 +109,6 @@
         .term-window-input { display: flex; padding: 15px; background: #111; border-top: 1px solid #333; }
         .term-window-input span { color: var(--accent); margin-right: 10px; font-family: monospace; font-weight: bold; }
         .term-window-input input { flex: 1; background: transparent; border: none; color: #fff; outline: none; font-family: 'Consolas', monospace; font-size: 14px; }
-
-        /* МОДАЛКА СИНХРОНИЗАЦИИ */
-        .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1001; }
-        .modal-content { background: var(--bg-panel); padding: 25px; border-radius: 10px; width: 90%; max-width: 400px; border: 1px solid #444; }
-        .modal-content input { width: 100%; padding: 10px; margin-bottom: 15px; background: #111; border: 1px solid #555; color: #fff; border-radius: 5px; font-family: monospace; font-size: 16px; text-transform: uppercase; }
-        .modal-content button { width: 100%; padding: 10px; background: var(--accent); color: #fff; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 10px; }
 
         @media (max-width: 768px) {
             .workspace { flex-direction: column; }
@@ -123,7 +127,7 @@
         <div class="logo"><i class="fa-solid fa-code"></i> SvarkaSC Pro</div>
         <div class="actions">
             <button class="btn btn-sync" onclick="document.getElementById('syncModal').style.display='flex'"><i class="fa-solid fa-link"></i> <span class="btn-text">Синхронизация</span></button>
-            <button class="btn btn-plugin" onclick="document.getElementById('plugin-upload').click()"><i class="fa-solid fa-puzzle-piece"></i> <span class="btn-text">Плагины</span></button>
+            <button class="btn btn-plugin" onclick="openPluginManager()"><i class="fa-solid fa-puzzle-piece"></i> <span class="btn-text">Плагины</span></button>
             <button class="btn" onclick="create3DProject()"><i class="fa-solid fa-cube"></i> <span class="btn-text">3D Проект</span></button>
             <button class="btn btn-term" onclick="openTerminal()"><i class="fa-solid fa-terminal"></i> <span class="btn-text">Терминал</span></button>
             <button class="btn btn-run" onclick="runCode()"><i class="fa-solid fa-play"></i> <span class="btn-text">Запуск</span></button>
@@ -166,7 +170,42 @@
         <div class="nav-item" onclick="openTerminal()"><i class="fa-solid fa-terminal"></i> Терминал</div>
     </div>
 
-    <!-- ВСТРОЕННЫЙ ТЕРМИНАЛ (С режимом Termux) -->
+    <!-- МОДАЛКА ПЛАГИНОВ (МАГАЗИН) -->
+    <div class="modal" id="pluginModal">
+        <div class="modal-content">
+            <h3 style="color:#fff; text-align:center; margin-bottom:15px;"><i class="fa-solid fa-store"></i> Менеджер плагинов</h3>
+            
+            <!-- СЕКЦИЯ 1: УСТАНОВЛЕННЫЕ -->
+            <div class="section-title">Установленные (Активные)</div>
+            <div id="installed-plugins-list">
+                <div style="color:#888; font-size:13px;">Пока пусто...</div>
+            </div>
+
+            <!-- СЕКЦИЯ 2: ДОСТУПНЫЕ ИЗ МАГАЗИНА -->
+            <div class="section-title">Доступные в магазине (GitHub)</div>
+            <div id="available-plugins-list">
+                <div style="color:#888; font-size:13px;">Загрузка...</div>
+            </div>
+
+            <!-- СЕКЦИЯ 3: ЗАГРУЗКА С ТЕЛЕФОНА -->
+            <div class="section-title" style="margin-top:20px;">Свои файлы</div>
+            <button onclick="document.getElementById('plugin-upload').click()" style="background:#444;"><i class="fa-solid fa-upload"></i> Загрузить .plsvk с телефона</button>
+            
+            <button style="background:#555; margin-top:15px;" onclick="document.getElementById('pluginModal').style.display='none'">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- МОДАЛКА СИНХРОНИЗАЦИИ -->
+    <div class="modal" id="syncModal">
+        <div class="modal-content">
+            <h3 style="color:#fff; margin-bottom:15px; text-align:center;">Синхронизация</h3>
+            <input type="text" id="room-code-input" placeholder="TEST123">
+            <button onclick="connectToRoom()">Подключиться</button>
+            <button style="background:#555;" onclick="document.getElementById('syncModal').style.display='none'">Отмена</button>
+        </div>
+    </div>
+
+    <!-- ТЕРМИНАЛ -->
     <div class="term-overlay" id="termOverlay" onclick="closeTerminal(event)">
         <div class="term-window" onclick="event.stopPropagation()">
             <div class="term-window-header">
@@ -187,18 +226,9 @@
         </div>
     </div>
 
-    <div class="modal" id="syncModal">
-        <div class="modal-content">
-            <h3 style="color:#fff; margin-bottom:15px; text-align:center;">Синхронизация</h3>
-            <input type="text" id="room-code-input" placeholder="TEST123">
-            <button onclick="connectToRoom()">Подключиться</button>
-            <button style="background:#555;" onclick="document.getElementById('syncModal').style.display='none'">Отмена</button>
-        </div>
-    </div>
-
     <script>
         // ==========================================
-        // 1. ФАЙЛОВАЯ СИСТЕМА
+        // 1. ФАЙЛОВАЯ СИСТЕМА И РЕДАКТОР
         // ==========================================
         let files = JSON.parse(localStorage.getItem('svarka_pro_files')) || {
             'main.html': `<!DOCTYPE html>\n<html>\n<head>\n    <link rel="stylesheet" href="style.css">\n</head>\n<body>\n    <h1>SvarkaSC Pro</h1>\n    <p>Нажми "Плагины" сверху и загрузи Клода!</p>\n</body>\n</html>`,
@@ -207,6 +237,9 @@
         };
         let currentFile = 'main.html';
         const fileListEl = document.getElementById('file-list');
+        
+        // Массив установленных (активных) плагинов
+        let activePlugins = JSON.parse(localStorage.getItem('svarka_active_plugins')) || [];
 
         function renderFiles() {
             fileListEl.innerHTML = '';
@@ -262,19 +295,14 @@
             link.href = URL.createObjectURL(blob);
             link.download = filename;
             link.click();
-            printTerm(`> Файл ${filename} скачан!`, "#0e639c");
         }
 
-        // ==========================================
-        // 2. РЕДАКТОР И СБОРКА
-        // ==========================================
         var editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
             lineNumbers: true, theme: "dracula", lineWrapping: true, mode: "htmlmixed",
-            inputStyle: "contenteditable"
+            inputStyle: "textarea" 
         });
         editor.setValue(files[currentFile]);
         renderFiles();
-
         editor.on("change", function() { files[currentFile] = editor.getValue(); saveFiles(); });
 
         function runCode() {
@@ -285,58 +313,137 @@
             const previewFrame = document.getElementById("preview-frame");
             const frameDoc = previewFrame.contentDocument || previewFrame.contentWindow.document;
             frameDoc.open(); frameDoc.write(html); frameDoc.close();
-
-            printTerm("> Сборка проекта...", "#0e639c");
-            setTimeout(() => {
-                printTerm("✅ Успешно собрано в превью.", "#89d185");
-                if (window.ccmSuccess) window.ccmSuccess(); // Клод радуется
-            }, 500);
             
             if(window.innerWidth <= 768) switchMobile('preview', document.querySelectorAll('.nav-item')[2]);
-            if(roomChannel) roomChannel.send({ type: 'broadcast', event: 'code-update', payload: { files: files } });
         }
 
         // ==========================================
-        // 3. ПЛАГИНЫ (.plsvk)
+        // 2. МЕНЕДЖЕР ПЛАГИНОВ (МАГАЗИН)
         // ==========================================
+        function openPluginManager() {
+            document.getElementById('pluginModal').style.display = 'flex';
+            renderInstalledPlugins();
+            loadAvailablePlugins();
+        }
+
+        function renderInstalledPlugins() {
+            const listEl = document.getElementById('installed-plugins-list');
+            if (activePlugins.length === 0) {
+                listEl.innerHTML = '<div style="color:#888; font-size:13px;">Нет активных плагинов.</div>';
+                return;
+            }
+            listEl.innerHTML = '';
+            activePlugins.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'plugin-card';
+                card.innerHTML = `
+                    <div class="plugin-info">
+                        <h4><i class="fa-solid fa-check-circle" style="color:#89d185;"></i> ${p.name}</h4>
+                        <p>Установлен и работает</p>
+                    </div>
+                    <div class="installed-badge">Активен</div>
+                `;
+                listEl.appendChild(card);
+            });
+        }
+
+        async function loadAvailablePlugins() {
+            const listEl = document.getElementById('available-plugins-list');
+            listEl.innerHTML = '<div style="color:#888; font-size:13px;">Загрузка...</div>';
+            
+            try {
+                const response = await fetch('plugins/index.json');
+                if (!response.ok) throw new Error("Нет файла index.json");
+                const plugins = await response.json();
+
+                listEl.innerHTML = '';
+                if(plugins.length === 0) {
+                    listEl.innerHTML = '<div style="color:#888; font-size:13px;">Магазин пуст.</div>';
+                    return;
+                }
+
+                plugins.forEach(p => {
+                    const isInstalled = activePlugins.some(ap => ap.id === p.id);
+                    const card = document.createElement('div');
+                    card.className = 'plugin-card';
+                    card.innerHTML = `
+                        <div class="plugin-info">
+                            <h4>${p.name}</h4>
+                            <p>${p.description}</p>
+                        </div>
+                        ${isInstalled 
+                            ? '<div class="installed-badge">Установлен</div>' 
+                            : `<button class="plugin-action-btn" onclick="downloadAndInstall('${p.file}', '${p.id}', '${p.name}')">Установить</button>`
+                        }
+                    `;
+                    listEl.appendChild(card);
+                });
+            } catch (err) {
+                listEl.innerHTML = `<div style="color:#f48771; font-size:13px;">Ошибка загрузки. Убедитесь, что файл <b>plugins/index.json</b> существует.</div>`;
+            }
+        }
+
+        async function downloadAndInstall(filename, id, name) {
+            try {
+                const response = await fetch('plugins/' + filename);
+                const arrayBuffer = await response.arrayBuffer();
+                await installPluginFromZip(arrayBuffer, id, name);
+            } catch (err) {
+                alert("Ошибка скачивания: " + err);
+            }
+        }
+
         document.getElementById('plugin-upload').addEventListener('change', function(event) {
             const file = event.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
             reader.onload = function(e) {
-                JSZip.loadAsync(e.target.result).then(function(zip) {
-                    const manifestFile = zip.file("manifest.json");
-                    if (!manifestFile) return alert("Ошибка: Нет manifest.json");
-
-                    manifestFile.async("string").then(function(manifestStr) {
-                        const manifest = JSON.parse(manifestStr);
-                        printTerm(`Установка плагина: ${manifest.name}...`, "#D97757");
-
-                        if (zip.file("styles.css")) {
-                            zip.file("styles.css").async("string").then(function(css) {
-                                const styleTag = document.createElement("style");
-                                styleTag.innerHTML = css;
-                                document.head.appendChild(styleTag);
-                            });
-                        }
-
-                        if (zip.file("main.js")) {
-                            zip.file("main.js").async("string").then(function(js) {
-                                const scriptTag = document.createElement("script");
-                                scriptTag.innerHTML = js;
-                                document.body.appendChild(scriptTag);
-                                printTerm(`Плагин ${manifest.name} успешно загружен!`, "#89d185");
-                            });
-                        }
-                    });
-                }).catch(err => alert("Ошибка чтения архива: " + err));
+                const fileName = file.name.replace('.plsvk', '');
+                installPluginFromZip(e.target.result, fileName, fileName);
             };
             reader.readAsArrayBuffer(file);
         });
 
+        async function installPluginFromZip(arrayBuffer, id, name) {
+            JSZip.loadAsync(arrayBuffer).then(function(zip) {
+                const manifestFile = zip.file("manifest.json");
+                if (!manifestFile) return alert("Ошибка: Нет manifest.json");
+
+                manifestFile.async("string").then(function(manifestStr) {
+                    const manifest = JSON.parse(manifestStr);
+                    
+                    // Внедряем CSS
+                    if (zip.file("styles.css")) {
+                        zip.file("styles.css").async("string").then(function(css) {
+                            const styleTag = document.createElement("style");
+                            styleTag.innerHTML = css;
+                            document.head.appendChild(styleTag);
+                        });
+                    }
+
+                    // Внедряем JS
+                    if (zip.file("main.js")) {
+                        zip.file("main.js").async("string").then(function(js) {
+                            const scriptTag = document.createElement("script");
+                            scriptTag.innerHTML = js;
+                            document.body.appendChild(scriptTag);
+                            
+                            // Сохраняем в список активных
+                            if (!activePlugins.some(ap => ap.id === id)) {
+                                activePlugins.push({id: id, name: manifest.name || name});
+                                localStorage.setItem('svarka_active_plugins', JSON.stringify(activePlugins));
+                            }
+                            
+                            alert(`Плагин "${manifest.name || name}" успешно установлен и запущен!`);
+                            document.getElementById('pluginModal').style.display = 'none';
+                        });
+                    }
+                });
+            }).catch(err => alert("Ошибка чтения архива: " + err));
+        }
+
         // ==========================================
-        // 4. ТЕРМИНАЛ И РЕЖИМ TERMUX (Внутри IDE)
+        // 3. ТЕРМИНАЛ (Diodo + Termux)
         // ==========================================
         const termOverlay = document.getElementById('termOverlay');
         const termOutput = document.getElementById("term-output");
@@ -363,16 +470,16 @@
             if (isTermuxMode) {
                 modeBtn.innerText = "Режим: Termux";
                 modeBtn.style.background = "#238636";
-                termTitle.innerText = "Termux (Linux)";
+                termTitle.innerText = "Termux (Симулятор Linux)";
                 termPrompt.innerText = "~ $";
-                printTerm("\nПереключение в Termux...", "#f0db4f");
-                printTerm("Введите 'help' для Linux-команд.", "#75beff");
+                printTerm("\n[Симулятор Termux запущен]", "#f0db4f");
+                printTerm("Введите 'help', чтобы узнать, какие Linux-команды я понимаю.", "#75beff");
             } else {
                 modeBtn.innerText = "Режим: Diodo";
                 modeBtn.style.background = "#444";
                 termTitle.innerText = "Diodo Shell";
                 termPrompt.innerText = ">";
-                printTerm("\nПереключение в Diodo...", "#f0db4f");
+                printTerm("\n[Переключение в Diodo]", "#f0db4f");
                 printTerm("Введите 'help' для команд Diodo.", "#75beff");
             }
         }
@@ -396,26 +503,36 @@
                 printTerm(promptStr + " " + cmd, "#fff");
                 
                 if (isTermuxMode) {
-                    // ЛОГИКА TERMUX
                     if (cmd === "clear") termOutput.innerHTML = "";
-                    else if (cmd === "ls") { printTerm("Downloads  Documents  Pictures  belos_termux", "#ccc"); }
-                    else if (cmd === "whoami") { printTerm("u0_a123", "#ccc"); }
-                    else if (cmd === "pkg install nodejs" || cmd === "apt install nodejs") {
-                        printTerm("Reading package lists... Done", "#ccc");
-                        printTerm("Building dependency tree... Done", "#ccc");
-                        setTimeout(() => printTerm("Unpacking nodejs (18.16.0)...", "#ccc"), 500);
-                        setTimeout(() => printTerm("Setting up nodejs... Done", "#89d185"), 1000);
+                    else if (cmd === "ls") { 
+                        printTerm("Список файлов в домашней директории:", "#75beff");
+                        printTerm("Downloads/", "#ccc"); 
+                        printTerm("Documents/", "#ccc"); 
+                        printTerm("belos_termux/", "#ccc"); 
+                    }
+                    else if (cmd === "whoami") { printTerm("u0_a123 (Пользователь Android)", "#ccc"); }
+                    else if (cmd === "pkg install python") {
+                        printTerm("Checking availability of current mirror...", "#ccc");
+                        setTimeout(() => printTerm("Reading package lists... Done", "#ccc"), 500);
+                        setTimeout(() => printTerm("Unpacking python (3.11.4)...", "#ccc"), 1000);
+                        setTimeout(() => printTerm("Setting up python... Done", "#89d185"), 1500);
                     }
                     else if (cmd === "apt update") {
-                        printTerm("Get:1 https://mirror.termux.dev stable InRelease", "#ccc");
+                        printTerm("Hit:1 https://packages.termux.dev stable InRelease", "#ccc");
                         setTimeout(() => printTerm("Reading package lists... Done", "#89d185"), 800);
                     }
                     else if (cmd === "help") {
-                        printTerm("Linux-команды: help, clear, ls, whoami, pkg install, apt update", "#75beff");
+                        printTerm("--- Терминал Termux (Симулятор) ---", "#f0db4f");
+                        printTerm("Это веб-симуляция. Настоящий Linux здесь не работает.", "#888");
+                        printTerm("Доступные команды:", "#75beff");
+                        printTerm("  ls           - Показать файлы в папке", "#ccc");
+                        printTerm("  whoami       - Показать имя пользователя", "#ccc");
+                        printTerm("  pkg install  - Симуляция установки пакета", "#ccc");
+                        printTerm("  apt update   - Симуляция обновления", "#ccc");
+                        printTerm("  clear        - Очистить экран", "#ccc");
                     }
-                    else printTerm(`bash: ${cmd}: command not found`, "#f48771");
+                    else printTerm(`bash: ${cmd}: command not found. Введите 'help'.`, "#f48771");
                 } else {
-                    // ЛОГИКА DIODO
                     if (cmd === "clear") termOutput.innerHTML = "";
                     else if (cmd === "build" || cmd === "run") runCode();
                     else if (cmd === "error") {
@@ -424,10 +541,14 @@
                     }
                     else if (cmd === "ls") {
                         printTerm("Файлы проекта:", "#75beff");
-                        for(let f in files) printTerm("  - " + f);
+                        for(let f in files) printTerm("  - " + f, "#ccc");
                     }
                     else if (cmd === "help") {
-                        printTerm("Команды Diodo: help, clear, build, ls, error", "#75beff");
+                        printTerm("--- Компилятор Diodo ---", "#f0db4f");
+                        printTerm("  build / run  - Скомпилировать код", "#ccc");
+                        printTerm("  ls           - Список файлов", "#ccc");
+                        printTerm("  error        - Вызвать ошибку", "#ccc");
+                        printTerm("  clear        - Очистить", "#ccc");
                     }
                     else printTerm(`Команда '${cmd}' не найдена.`, "#f48771");
                 }
@@ -435,7 +556,7 @@
         });
 
         // ==========================================
-        // 5. МОБИЛЬНАЯ НАВИГАЦИЯ И СИНХРОНИЗАЦИЯ
+        // 4. МОБИЛЬНАЯ НАВИГАЦИЯ И СИНХРОНИЗАЦИЯ
         // ==========================================
         function switchMobile(pane, element) {
             if(window.innerWidth > 768) return; 
