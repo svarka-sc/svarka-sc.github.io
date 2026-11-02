@@ -13,7 +13,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
     
-    <!-- Иконки, JSZip для плагинов и Supabase -->
+    <!-- Иконки, JSZip и Supabase -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -92,7 +92,17 @@
         .plugin-info p { color: #888; font-size: 12px; margin: 0; }
         .plugin-action-btn { background: var(--green); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; }
         .plugin-action-btn:hover { background: #2ea043; }
-        .installed-badge { color: #89d185; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 5px; }
+        
+        /* ТУМБЛЕР (ВКЛ/ВЫКЛ) */
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; margin-right: 10px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: .4s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--green); }
+        input:checked + .slider:before { transform: translateX(20px); }
+        
+        .delete-btn { background: transparent; color: #f48771; border: none; cursor: pointer; font-size: 16px; margin-left: 5px; padding: 5px; }
+        .delete-btn:hover { color: #ff0000; }
 
         /* ТЕРМИНАЛ */
         .term-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 1000; }
@@ -225,7 +235,7 @@
 
     <script>
         // ==========================================
-        // УНИВЕРСАЛЬНОЕ API ДЛЯ ВСЕХ ПЛАГИНОВ
+        // УНИВЕРСАЛЬНОЕ API ДЛЯ ПЛАГИНОВ (Event Bus)
         // ==========================================
         window.SvarkaAPI = {
             listeners: {},
@@ -265,7 +275,11 @@
         let currentFile = 'main.html';
         const fileListEl = document.getElementById('file-list');
         
+        // Массив объектов { id, name, version, isEnabled }
         let activePlugins = JSON.parse(localStorage.getItem('svarka_active_plugins')) || [];
+
+        // Восстанавливаем статус (для старых версий, если isEnabled нет)
+        activePlugins.forEach(p => { if (p.isEnabled === undefined) p.isEnabled = true; });
 
         function renderFiles() {
             fileListEl.innerHTML = '';
@@ -335,7 +349,7 @@
             window.SvarkaAPI.emit('typing'); 
         });
 
-        // === УНИВЕРСАЛЬНЫЙ ЗАПУСК + ПРЯМОЙ ВЫЗОВ КЛОДА ===
+        // === УНИВЕРСАЛЬНЫЙ ЗАПУСК + ПЕРЕХВАТ ОШИБОК ИЗ IFRAME ===
         function runCode() {
             let html = files['main.html'] || '';
             if (files['style.css']) html = html.replace('<link rel="stylesheet" href="style.css">', `<style>${files['style.css']}</style>`);
@@ -344,16 +358,21 @@
             const previewFrame = document.getElementById("preview-frame");
             const frameDoc = previewFrame.contentDocument || previewFrame.contentWindow.document;
             
+            previewFrame.contentWindow.onerror = function(message, source, lineno, colno, error) {
+                const coords = editor.charCoords({line: lineno || 1, ch: 0}, "local");
+                window.SvarkaAPI.emit('build_error', { x: coords.left, y: coords.top, message: message });
+                if (window.ccmError) window.ccmError(coords.left, coords.top);
+                return true;
+            };
+
             try {
                 frameDoc.open(); frameDoc.write(html); frameDoc.close();
-                window.SvarkaAPI.emit('build_success'); // Для всех плагинов
-                if (window.ccmSuccess) window.ccmSuccess(); // Конкретно для Клода
+                window.SvarkaAPI.emit('build_success');
+                if (window.ccmSuccess) window.ccmSuccess();
             } catch (error) {
                 const errorLine = 1; 
                 const coords = editor.charCoords({line: errorLine, ch: 0}, "local");
-                // Для всех плагинов (через API)
                 window.SvarkaAPI.emit('build_error', { x: coords.left, y: coords.top, message: error.message }); 
-                // Конкретно для Клода (прямой вызов с координатами)
                 if (window.ccmError) window.ccmError(coords.left, coords.top);
             }
             
@@ -361,7 +380,7 @@
         }
 
         // ==========================================
-        // 2. МЕНЕДЖЕР ПЛАГИНОВ
+        // 2. МЕНЕДЖЕР ПЛАГИНОВ (Тумблеры и Версии)
         // ==========================================
         function openPluginManager() {
             document.getElementById('pluginModal').style.display = 'flex';
@@ -381,13 +400,37 @@
                 card.className = 'plugin-card';
                 card.innerHTML = `
                     <div class="plugin-info">
-                        <h4><i class="fa-solid fa-check-circle" style="color:#89d185;"></i> ${p.name}</h4>
-                        <p>Установлен и работает</p>
+                        <h4>${p.name} <span style="font-size:10px; color:#888;">v${p.version || '1.0'}</span></h4>
+                        <p>Статус: ${p.isEnabled ? 'Включен' : 'Выключен'}</p>
                     </div>
-                    <div class="installed-badge">Активен</div>
+                    <div style="display:flex; align-items:center;">
+                        <label class="switch">
+                            <input type="checkbox" ${p.isEnabled ? 'checked' : ''} onchange="togglePlugin('${p.name}', this.checked)">
+                            <span class="slider"></span>
+                        </label>
+                        <button class="delete-btn" onclick="deletePlugin('${p.name}')" title="Удалить"><i class="fa-solid fa-trash"></i></button>
+                    </div>
                 `;
                 listEl.appendChild(card);
             });
+        }
+
+        function togglePlugin(name, isChecked) {
+            const plugin = activePlugins.find(p => p.name === name);
+            if (plugin) {
+                plugin.isEnabled = isChecked;
+                localStorage.setItem('svarka_active_plugins', JSON.stringify(activePlugins));
+                // Перезагружаем, чтобы применить изменения (выгрузить или загрузить код)
+                location.reload(); 
+            }
+        }
+
+        function deletePlugin(name) {
+            if(!confirm(`Удалить плагин "${name}"?`)) return;
+            localStorage.removeItem('svarka_plugin_code_' + name);
+            activePlugins = activePlugins.filter(p => p.name !== name);
+            localStorage.setItem('svarka_active_plugins', JSON.stringify(activePlugins));
+            location.reload();
         }
 
         async function loadAvailablePlugins() {
@@ -413,19 +456,30 @@
                 listEl.innerHTML = '';
                 plsvkFiles.forEach(file => {
                     const pluginName = file.name.replace('.plsvk', ''); 
-                    const isInstalled = activePlugins.some(ap => ap.name === pluginName);
+                    const installedPlugin = activePlugins.find(ap => ap.name === pluginName);
                     
                     const card = document.createElement('div');
                     card.className = 'plugin-card';
+                    
+                    let actionHtml = '';
+                    if (installedPlugin) {
+                        actionHtml = `
+                        <div style="display:flex; align-items:center;">
+                            <label class="switch">
+                                <input type="checkbox" ${installedPlugin.isEnabled ? 'checked' : ''} onchange="togglePlugin('${installedPlugin.name}', this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>`;
+                    } else {
+                        actionHtml = `<button class="plugin-action-btn" onclick="downloadAndInstall('${file.download_url}', '${pluginName}')">Установить</button>`;
+                    }
+
                     card.innerHTML = `
                         <div class="plugin-info">
                             <h4>${pluginName}</h4>
                             <p>Найден на GitHub</p>
                         </div>
-                        ${isInstalled 
-                            ? '<div class="installed-badge">Установлен</div>' 
-                            : `<button class="plugin-action-btn" onclick="downloadAndInstall('${file.download_url}', '${pluginName}')">Установить</button>`
-                        }
+                        ${actionHtml}
                     `;
                     listEl.appendChild(card);
                 });
@@ -461,28 +515,35 @@
                 if (!pluginFile) return alert("Ошибка: В архиве нет файла plugin.js");
 
                 window.pluginAssets = window.pluginAssets || {};
+                window.pluginAssets[name] = {}; 
+                
                 const assetsFolder = zip.folder("assets");
                 if (assetsFolder) {
                     assetsFolder.forEach((relativePath, file) => {
                         file.async("base64").then(function(b64) {
-                            window.pluginAssets[relativePath] = `data:image/png;base64,${b64}`;
+                            window.pluginAssets[name][relativePath] = `data:image/png;base64,${b64}`;
                         });
                     });
                 }
 
                 setTimeout(() => {
                     pluginFile.async("string").then(function(jsCode) {
-                        const scriptTag = document.createElement("script");
-                        scriptTag.innerHTML = jsCode;
-                        document.body.appendChild(scriptTag);
-                        
-                        if (!activePlugins.some(ap => ap.name === name)) {
-                            activePlugins.push({id: id, name: name});
-                            localStorage.setItem('svarka_active_plugins', JSON.stringify(activePlugins));
+                        if (activePlugins.some(ap => ap.name === name)) {
+                            if (!confirm(`Плагин "${name}" уже установлен. Заменить на новую версию?`)) return;
                         }
+
+                        let version = "1.0";
+                        const versionMatch = jsCode.match(/\/\/\s*@version\s*([\d\.]+)/);
+                        if (versionMatch) version = versionMatch[1];
+
+                        localStorage.setItem('svarka_plugin_code_' + name, jsCode);
+
+                        activePlugins = activePlugins.filter(ap => ap.name !== name);
+                        activePlugins.push({id: id, name: name, version: version, isEnabled: true});
+                        localStorage.setItem('svarka_active_plugins', JSON.stringify(activePlugins));
                         
-                        alert(`Плагин "${name}" успешно установлен!`);
-                        document.getElementById('pluginModal').style.display = 'none';
+                        alert(`Плагин "${name}" (v${version}) успешно установлен! Страница перезагрузится.`);
+                        location.reload(); 
                     });
                 }, 300);
             }).catch(err => alert("Ошибка чтения архива: " + err));
@@ -519,14 +580,12 @@
                 termTitle.innerText = "Termux (Симулятор Linux)";
                 termPrompt.innerText = "~ $";
                 printTerm("\n[Симулятор Termux запущен]", "#f0db4f");
-                printTerm("Введите 'help', чтобы узнать, какие Linux-команды я понимаю.", "#75beff");
             } else {
                 modeBtn.innerText = "Режим: Diodo";
                 modeBtn.style.background = "#444";
                 termTitle.innerText = "Diodo Shell";
                 termPrompt.innerText = ">";
                 printTerm("\n[Переключение в Diodo]", "#f0db4f");
-                printTerm("Введите 'help' для команд Diodo.", "#75beff");
             }
         }
 
@@ -550,32 +609,17 @@
                 
                 if (isTermuxMode) {
                     if (cmd === "clear") termOutput.innerHTML = "";
-                    else if (cmd === "ls") { 
-                        printTerm("Список файлов в домашней директории:", "#75beff");
-                        printTerm("Downloads/", "#ccc"); 
-                        printTerm("Documents/", "#ccc"); 
-                        printTerm("belos_termux/", "#ccc"); 
-                    }
+                    else if (cmd === "ls") { printTerm("Downloads/  Documents/  belos_termux/", "#ccc"); }
                     else if (cmd === "whoami") { printTerm("u0_a123 (Пользователь Android)", "#ccc"); }
                     else if (cmd === "pkg install python") {
-                        printTerm("Checking availability of current mirror...", "#ccc");
-                        setTimeout(() => printTerm("Reading package lists... Done", "#ccc"), 500);
-                        setTimeout(() => printTerm("Unpacking python (3.11.4)...", "#ccc"), 1000);
-                        setTimeout(() => printTerm("Setting up python... Done", "#89d185"), 1500);
+                        printTerm("Reading package lists... Done", "#ccc");
+                        setTimeout(() => printTerm("Setting up python... Done", "#89d185"), 1000);
                     }
                     else if (cmd === "apt update") {
-                        printTerm("Hit:1 https://packages.termux.dev stable InRelease", "#ccc");
-                        setTimeout(() => printTerm("Reading package lists... Done", "#89d185"), 800);
+                        printTerm("Reading package lists... Done", "#89d185");
                     }
                     else if (cmd === "help") {
-                        printTerm("--- Терминал Termux (Симулятор) ---", "#f0db4f");
-                        printTerm("Это веб-симуляция. Настоящий Linux здесь не работает.", "#888");
-                        printTerm("Доступные команды:", "#75beff");
-                        printTerm("  ls           - Показать файлы в папке", "#ccc");
-                        printTerm("  whoami       - Показать имя пользователя", "#ccc");
-                        printTerm("  pkg install  - Симуляция установки пакета", "#ccc");
-                        printTerm("  apt update   - Симуляция обновления", "#ccc");
-                        printTerm("  clear        - Очистить экран", "#ccc");
+                        printTerm("Linux-команды: help, clear, ls, whoami, pkg install, apt update", "#75beff");
                     }
                     else printTerm(`bash: ${cmd}: command not found. Введите 'help'.`, "#f48771");
                 } else {
@@ -585,18 +629,14 @@
                         printTerm("Симуляция ошибки компиляции...", "#f48771");
                         const coords = editor.charCoords({line: 5, ch: 0}, "local");
                         window.SvarkaAPI.emit('build_error', { x: coords.left, y: coords.top, message: "Test Error" });
-                        if (window.ccmError) window.ccmError(coords.left, coords.top); // Вызов для Клода
+                        if (window.ccmError) window.ccmError(coords.left, coords.top);
                     }
                     else if (cmd === "ls") {
                         printTerm("Файлы проекта:", "#75beff");
                         for(let f in files) printTerm("  - " + f, "#ccc");
                     }
                     else if (cmd === "help") {
-                        printTerm("--- Компилятор Diodo ---", "#f0db4f");
-                        printTerm("  build / run  - Скомпилировать код", "#ccc");
-                        printTerm("  ls           - Список файлов", "#ccc");
-                        printTerm("  error        - Вызвать ошибку", "#ccc");
-                        printTerm("  clear        - Очистить", "#ccc");
+                        printTerm("Diodo команды: help, clear, build, ls, error", "#75beff");
                     }
                     else printTerm(`Команда '${cmd}' не найдена.`, "#f48771");
                 }
@@ -639,6 +679,44 @@
         }
 
         setTimeout(runCode, 500);
+
+        // ==========================================
+        // 5. ГЛОБАЛЬНЫЙ СЛУШАТЕЛЬ КЛАВИАТУРЫ
+        // ==========================================
+        document.addEventListener('focusin', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.closest('.CodeMirror')) {
+                window.SvarkaAPI.emit('keyboard_open');
+            }
+        });
+
+        document.addEventListener('focusout', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.closest('.CodeMirror')) {
+                window.SvarkaAPI.emit('keyboard_close');
+            }
+        });
+
+        document.addEventListener('input', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                window.SvarkaAPI.emit('typing');
+            }
+        });
+
+        // ==========================================
+        // 6. АВТОЗАПУСК ВКЛЮЧЕННЫХ ПЛАГИНОВ
+        // ==========================================
+        setTimeout(() => {
+            activePlugins.forEach(p => {
+                if (p.isEnabled) {
+                    const code = localStorage.getItem('svarka_plugin_code_' + p.name);
+                    if (code) {
+                        const scriptTag = document.createElement("script");
+                        // Оборачиваем в try-catch, чтобы один сломанный плагин не убил остальные
+                        scriptTag.innerHTML = `try { \n(function() { \n// Плагин: ${p.name}\n${code}\n })(); \n} catch(e) { console.error("Ошибка в плагине ${p.name}:", e); }`;
+                        document.body.appendChild(scriptTag);
+                    }
+                }
+            });
+        }, 800);
     </script>
 </body>
 </html>
