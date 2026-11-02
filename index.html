@@ -35,6 +35,12 @@
             display: flex; flex-direction: column; overflow: hidden; 
         }
 
+        /* СТИЛЬ ДЛЯ ПОДСВЕТКИ ОШИБКИ */
+        .error-line { 
+            background: rgba(255, 0, 0, 0.25) !important; 
+            border-bottom: 1px dashed red;
+        }
+
         /* ВЕРХНЯЯ ПАНЕЛЬ */
         .topbar { background-color: var(--bg-top); height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; z-index: 100; }
         .logo { font-weight: bold; color: #fff; font-size: 14px; display: flex; align-items: center; gap: 8px; }
@@ -93,7 +99,7 @@
         .plugin-action-btn { background: var(--green); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; }
         .plugin-action-btn:hover { background: #2ea043; }
         
-        /* ТУМБЛЕР (ВКЛ/ВЫКЛ) */
+        /* ТУМБЛЕР */
         .switch { position: relative; display: inline-block; width: 40px; height: 20px; margin-right: 10px; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: .4s; border-radius: 20px; }
@@ -235,6 +241,24 @@
 
     <script>
         // ==========================================
+        // 0. ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК ОШИБОК ПЛАГИНОВ
+        // ==========================================
+        window.addEventListener('error', function(e) {
+            if (e.message && (e.message.includes('plugin') || e.message.includes('Claude') || e.filename.includes('plugin'))) {
+                const errDiv = document.createElement("div");
+                errDiv.style.color = "#f48771";
+                errDiv.style.borderBottom = "1px solid #444";
+                errDiv.style.padding = "5px 0";
+                errDiv.innerText = "[ОШИБКА ПЛАГИНА] " + e.message;
+                
+                const termOut = document.getElementById('term-output');
+                if(termOut) termOut.appendChild(errDiv);
+                
+                console.error("[ОШИБКА ПЛАГИНА]", e);
+            }
+        });
+
+        // ==========================================
         // УНИВЕРСАЛЬНОЕ API ДЛЯ ПЛАГИНОВ (Event Bus)
         // ==========================================
         window.SvarkaAPI = {
@@ -275,11 +299,20 @@
         let currentFile = 'main.html';
         const fileListEl = document.getElementById('file-list');
         
-        // Массив объектов { id, name, version, isEnabled }
         let activePlugins = JSON.parse(localStorage.getItem('svarka_active_plugins')) || [];
-
-        // Восстанавливаем статус (для старых версий, если isEnabled нет)
         activePlugins.forEach(p => { if (p.isEnabled === undefined) p.isEnabled = true; });
+
+        // Функция для очистки и установки подсветки ошибки
+        function highlightErrorLine(lineNumber) {
+            // Очищаем старые подсветки
+            for (let i = 0; i < editor.lineCount(); i++) {
+                editor.removeLineClass(i, "background", "error-line");
+            }
+            // Подсвечиваем новую строку (сдвиг на 1, так как массивы с 0, а строки с 1)
+            const line = Math.max(0, Math.min(lineNumber - 1, editor.lineCount() - 1));
+            editor.addLineClass(line, "background", "error-line");
+            editor.scrollIntoView({line: line, ch: 0}, 200);
+        }
 
         function renderFiles() {
             fileListEl.innerHTML = '';
@@ -349,38 +382,75 @@
             window.SvarkaAPI.emit('typing'); 
         });
 
-        // === УНИВЕРСАЛЬНЫЙ ЗАПУСК + ПЕРЕХВАТ ОШИБОК ИЗ IFRAME ===
+        // === ФУНКЦИЯ ЗАПУСКА С ПРОВЕРКОЙ И ПОДСВЕТКОЙ ===
         function runCode() {
             let html = files['main.html'] || '';
+            
+            // Очищаем старые ошибки при новом запуске
+            for (let i = 0; i < editor.lineCount(); i++) {
+                editor.removeLineClass(i, "background", "error-line");
+            }
+
+            // Проверка на набор букв (нет тегов)
+            const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html);
+            if (html.trim().length > 0 && !hasHtmlTags) {
+                const coords = editor.charCoords({line: 0, ch: 0}, "local");
+                window.SvarkaAPI.emit('build_error', { x: coords.left, y: coords.top, message: "SyntaxError: Invalid code. No HTML tags found." });
+                if (window.ccmError) window.ccmError(coords.left, coords.top);
+                
+                highlightErrorLine(1); // Подсвечиваем первую строку
+                
+                const previewFrame = document.getElementById("preview-frame");
+                const frameDoc = previewFrame.contentDocument || previewFrame.contentWindow.document;
+                frameDoc.open(); 
+                frameDoc.write("<body style='background:#1e1e1e; color:#ff5555; text-align:center; padding-top:50px; font-family:sans-serif;'><h1>Ошибка компиляции</h1><p>Код не содержит HTML-тегов. Проверьте выделенную строку.</p></body>"); 
+                frameDoc.close();
+                
+                if(window.innerWidth <= 768) switchMobile('preview', document.querySelectorAll('.nav-item')[2]);
+                return; 
+            }
+
             if (files['style.css']) html = html.replace('<link rel="stylesheet" href="style.css">', `<style>${files['style.css']}</style>`);
             if (files['script.js']) html = html.replace('<script src="script.js"><\/script>', `<script>${files['script.js']}<\/script>`);
 
             const previewFrame = document.getElementById("preview-frame");
             const frameDoc = previewFrame.contentDocument || previewFrame.contentWindow.document;
             
+            let successTimeout; 
+
             previewFrame.contentWindow.onerror = function(message, source, lineno, colno, error) {
+                clearTimeout(successTimeout); 
                 const coords = editor.charCoords({line: lineno || 1, ch: 0}, "local");
                 window.SvarkaAPI.emit('build_error', { x: coords.left, y: coords.top, message: message });
                 if (window.ccmError) window.ccmError(coords.left, coords.top);
-                return true;
+                
+                highlightErrorLine(lineno || 1); // Подсвечиваем строку с ошибкой
+                return true; 
             };
 
             try {
                 frameDoc.open(); frameDoc.write(html); frameDoc.close();
-                window.SvarkaAPI.emit('build_success');
-                if (window.ccmSuccess) window.ccmSuccess();
+                
+                successTimeout = setTimeout(() => {
+                    window.SvarkaAPI.emit('build_success');
+                    if (window.ccmSuccess) window.ccmSuccess();
+                }, 200);
+
             } catch (error) {
+                clearTimeout(successTimeout); 
                 const errorLine = 1; 
                 const coords = editor.charCoords({line: errorLine, ch: 0}, "local");
                 window.SvarkaAPI.emit('build_error', { x: coords.left, y: coords.top, message: error.message }); 
                 if (window.ccmError) window.ccmError(coords.left, coords.top);
+                
+                highlightErrorLine(1);
             }
             
             if(window.innerWidth <= 768) switchMobile('preview', document.querySelectorAll('.nav-item')[2]);
         }
 
         // ==========================================
-        // 2. МЕНЕДЖЕР ПЛАГИНОВ (Тумблеры и Версии)
+        // 2. МЕНЕДЖЕР ПЛАГИНОВ
         // ==========================================
         function openPluginManager() {
             document.getElementById('pluginModal').style.display = 'flex';
@@ -420,7 +490,6 @@
             if (plugin) {
                 plugin.isEnabled = isChecked;
                 localStorage.setItem('svarka_active_plugins', JSON.stringify(activePlugins));
-                // Перезагружаем, чтобы применить изменения (выгрузить или загрузить код)
                 location.reload(); 
             }
         }
@@ -550,7 +619,7 @@
         }
 
         // ==========================================
-        // 3. ТЕРМИНАЛ
+        // 3. ТЕРМИНАЛ (С ВЫЗОВОМ ОШИБКИ)
         // ==========================================
         const termOverlay = document.getElementById('termOverlay');
         const termOutput = document.getElementById("term-output");
@@ -608,21 +677,19 @@
                 printTerm(promptStr + " " + cmd, "#fff");
                 
                 if (isTermuxMode) {
+                    // ... (логика термукса)
                     if (cmd === "clear") termOutput.innerHTML = "";
                     else if (cmd === "ls") { printTerm("Downloads/  Documents/  belos_termux/", "#ccc"); }
                     else if (cmd === "whoami") { printTerm("u0_a123 (Пользователь Android)", "#ccc"); }
-                    else if (cmd === "pkg install python") {
-                        printTerm("Reading package lists... Done", "#ccc");
-                        setTimeout(() => printTerm("Setting up python... Done", "#89d185"), 1000);
+                    else {
+                        printTerm(`bash: ${cmd}: command not found`, "#f48771");
+                        const coords = editor.charCoords({line: 0, ch: 0}, "local");
+                        window.SvarkaAPI.emit('build_error', { x: coords.left, y: coords.top, message: `Terminal Error: ${cmd}` });
+                        if (window.ccmError) window.ccmError(coords.left, coords.top);
+                        highlightErrorLine(1);
                     }
-                    else if (cmd === "apt update") {
-                        printTerm("Reading package lists... Done", "#89d185");
-                    }
-                    else if (cmd === "help") {
-                        printTerm("Linux-команды: help, clear, ls, whoami, pkg install, apt update", "#75beff");
-                    }
-                    else printTerm(`bash: ${cmd}: command not found. Введите 'help'.`, "#f48771");
                 } else {
+                    // Логика Diodo
                     if (cmd === "clear") termOutput.innerHTML = "";
                     else if (cmd === "build" || cmd === "run") runCode();
                     else if (cmd === "error") {
@@ -630,6 +697,7 @@
                         const coords = editor.charCoords({line: 5, ch: 0}, "local");
                         window.SvarkaAPI.emit('build_error', { x: coords.left, y: coords.top, message: "Test Error" });
                         if (window.ccmError) window.ccmError(coords.left, coords.top);
+                        highlightErrorLine(5);
                     }
                     else if (cmd === "ls") {
                         printTerm("Файлы проекта:", "#75beff");
@@ -638,7 +706,14 @@
                     else if (cmd === "help") {
                         printTerm("Diodo команды: help, clear, build, ls, error", "#75beff");
                     }
-                    else printTerm(`Команда '${cmd}' не найдена.`, "#f48771");
+                    else {
+                        // ОШИБКА В ТЕРМИНАЛЕ
+                        printTerm(`Команда '${cmd}' не найдена.`, "#f48771");
+                        const coords = editor.charCoords({line: 0, ch: 0}, "local");
+                        window.SvarkaAPI.emit('build_error', { x: coords.left, y: coords.top, message: `Terminal Command Error: ${cmd}` });
+                        if (window.ccmError) window.ccmError(coords.left, coords.top);
+                        highlightErrorLine(1); // Подсветит 1 строку
+                    }
                 }
             }
         });
@@ -680,9 +755,6 @@
 
         setTimeout(runCode, 500);
 
-        // ==========================================
-        // 5. ГЛОБАЛЬНЫЙ СЛУШАТЕЛЬ КЛАВИАТУРЫ
-        // ==========================================
         document.addEventListener('focusin', (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.closest('.CodeMirror')) {
                 window.SvarkaAPI.emit('keyboard_open');
@@ -701,16 +773,13 @@
             }
         });
 
-        // ==========================================
-        // 6. АВТОЗАПУСК ВКЛЮЧЕННЫХ ПЛАГИНОВ
-        // ==========================================
+        // Запускаем только включенные плагины
         setTimeout(() => {
             activePlugins.forEach(p => {
                 if (p.isEnabled) {
                     const code = localStorage.getItem('svarka_plugin_code_' + p.name);
                     if (code) {
                         const scriptTag = document.createElement("script");
-                        // Оборачиваем в try-catch, чтобы один сломанный плагин не убил остальные
                         scriptTag.innerHTML = `try { \n(function() { \n// Плагин: ${p.name}\n${code}\n })(); \n} catch(e) { console.error("Ошибка в плагине ${p.name}:", e); }`;
                         document.body.appendChild(scriptTag);
                     }
